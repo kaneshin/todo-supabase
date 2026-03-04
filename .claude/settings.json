@@ -1,0 +1,32 @@
+{
+  "includeCoAuthoredBy": true,
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:orm.drizzle.team)",
+      "WebFetch(domain:hono.dev)",
+      "WebFetch(domain:supabase.com)",
+      "WebFetch(domain:ui.shadcn.com)"
+    ],
+    "deny": [
+      "Bash(sudo:*)",
+      "Bash(npm run deploy:*)",
+      "Bash(pnpm run deploy:*)",
+      "Bash(wrangler deploy:*)",
+      "Bash(wrangler pages:*)",
+      "Bash(npx wrangler deploy:*)",
+      "Bash(npx wrangler pages:*)",
+      "Read(**/.dev.vars)",
+      "Read(**/.env)",
+      "Read(**/.env.*)"
+    ],
+    "ask": [
+      "Bash(brew:*)",
+      "Bash(npm add:*)",
+      "Bash(npm install:*)",
+      "Bash(pnpm add:*)",
+      "Bash(pnpm install:*)"
+    ]
+  },
+  "plansDirectory": "docs/plans"
+}
