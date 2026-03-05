@@ -31,7 +31,7 @@ Build the Hono-based REST API deployed to Cloudflare Workers. It provides authen
     "hono": "^4.x",
     "@hono/zod-validator": "^0.x",
     "@supabase/supabase-js": "^2.x",
-    "drizzle-orm": "^0.38.x",
+    "drizzle-orm": "^0.45.x",
     "postgres": "^3.x",
     "zod": "^3.x",
     "@todo-supabase/database": "workspace:*"
@@ -41,7 +41,7 @@ Build the Hono-based REST API deployed to Cloudflare Workers. It provides authen
     "@cloudflare/workers-types": "^4.x",
     "@todo-supabase/typescript-config": "workspace:*",
     "typescript": "^5.x",
-    "vitest": "^2.x",
+    "vitest": "^3.x",
     "wrangler": "^3.x"
   }
 }

@@ -38,7 +38,7 @@ Build the Remix SSR frontend deployed to Cloudflare Pages. It handles authentica
     "tailwindcss": "^4.x",
     "@tailwindcss/vite": "^4.x",
     "clsx": "^2.x",
-    "tailwind-merge": "^2.x",
+    "tailwind-merge": "^3.x",
     "class-variance-authority": "^0.x",
     "lucide-react": "^0.x",
     "isbot": "^5.x"
@@ -49,7 +49,7 @@ Build the Remix SSR frontend deployed to Cloudflare Pages. It handles authentica
     "@todo-supabase/typescript-config": "workspace:*",
     "typescript": "^5.x",
     "vite": "^6.x",
-    "vitest": "^2.x",
+    "vitest": "^3.x",
     "wrangler": "^3.x"
   }
 }

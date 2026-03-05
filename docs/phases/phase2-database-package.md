@@ -32,11 +32,11 @@ Create `packages/database` with the Drizzle ORM schema for the `todos` table, a 
     "db:push": "drizzle-kit push"
   },
   "dependencies": {
-    "drizzle-orm": "^0.38.x",
+    "drizzle-orm": "^0.45.x",
     "postgres": "^3.x"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.x",
+    "drizzle-kit": "^0.31.x",
     "@todo-supabase/typescript-config": "workspace:*",
     "typescript": "^5.x"
   }
