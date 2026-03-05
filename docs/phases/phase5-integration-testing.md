@@ -42,12 +42,12 @@ Browser → Remix (cookie-based session via @supabase/ssr)
 ```
 Hono route handler
   → createDb(DATABASE_URL)
-  → setRequestContext(db, jwtClaims)   // sets request.jwt.claims for RLS
-  → db.select().from(todos).where(eq(todos.userId, userId))
+  → runAsAuthenticated(db, claims, fn) // transaction: set request.jwt.claims + SET LOCAL ROLE authenticated
+  → tx.select().from(todos).where(eq(todos.userId, userId))
   → RLS evaluates auth.uid() from JWT claims (defense in depth)
 ```
 
-- `setRequestContext` must be called **before** any user-scoped query in the same request.
+- User-scoped queries must execute inside the same transaction started by `runAsAuthenticated`.
 - If per-request context is unreliable with connection pooling, fall back to Supabase PostgREST.
 
 ### 4. CORS Configuration
@@ -149,11 +149,14 @@ Using Supabase SQL editor or psql:
 
 ```sql
 -- Set JWT claims for User B
-SELECT set_config('request.jwt.claims', '{"sub": "USER_B_UUID"}', true);
+BEGIN;
+SELECT set_config('request.jwt.claims', '{"sub": "USER_B_UUID", "role": "authenticated"}', true);
+SET LOCAL ROLE authenticated;
 
 -- Try to read User A's todo
 SELECT * FROM todos WHERE id = 'USER_A_TODO_ID';
 -- Expected: 0 rows (RLS blocks access)
+ROLLBACK;
 ```
 
 #### Test 3: RLS Regression Guard

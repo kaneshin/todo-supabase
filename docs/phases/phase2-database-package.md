@@ -2,7 +2,7 @@
 
 ## Objective
 
-Create `packages/database` with the Drizzle ORM schema for the `todos` table, a database factory, SQL migrations with Row Level Security policies, and a per-request JWT context helper for secure multi-tenant access.
+Create `packages/database` with the Drizzle ORM schema for the `todos` table, a database factory, SQL migrations with Row Level Security policies, and transaction-scoped helpers that apply per-request JWT claims plus local DB role for secure multi-tenant access.
 
 ## Dependencies
 
@@ -123,18 +123,25 @@ import type { Database } from "./index";
 import { sql } from "drizzle-orm";
 
 /**
- * Sets the JWT claim context on the current DB session so that
- * auth.uid() resolves correctly for RLS policy evaluation.
- *
- * Must be called before any user-scoped query in the same
- * request lifecycle.
+ * Runs a function inside a single DB transaction with JWT claims and role context
+ * so Supabase RLS policies evaluate auth.uid() against the authenticated user.
  */
-export async function setRequestContext(db: Database, jwt: string) {
-  await db.execute(sql`SELECT set_config('request.jwt.claims', ${jwt}, true)`);
+export async function runAsAuthenticated<T>(
+  db: Database,
+  claims: { sub: string; role: "authenticated"; [key: string]: unknown },
+  fn: (tx: any) => Promise<T>
+) {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT set_config('request.jwt.claims', ${JSON.stringify(claims)}, true)`);
+    await tx.execute(sql`SET LOCAL ROLE authenticated`);
+    return fn(tx);
+  });
 }
 ```
 
-- `set_config(..., true)` makes the setting local to the current transaction.
+- `set_config(..., true)` keeps claims local to the current transaction.
+- `SET LOCAL ROLE authenticated` ensures policies defined `TO authenticated` are actually evaluated for that role.
+- Keep all user-scoped statements inside this helper callback so context and query run on the same backend transaction.
 - If this approach proves unreliable with connection pooling, the fallback is to use Supabase PostgREST for user-scoped CRUD (see PLAN.md Security Model).
 
 ### SQL Migration
@@ -186,6 +193,8 @@ CREATE TRIGGER set_updated_at
 -- Grant access to the authenticated role
 GRANT SELECT, INSERT, UPDATE, DELETE ON "todos" TO authenticated;
 ```
+
+Also ensure the runtime DB user does not bypass RLS (for example: not superuser, no `BYPASSRLS` attribute), otherwise policy checks are ineffective.
 
 ## Key Decisions
 

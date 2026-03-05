@@ -35,7 +35,7 @@ todo-supabase/
 The API uses direct PostgreSQL access (Drizzle + `postgres`), so user isolation must be enforced in **both** application logic and database policy.
 
 1. **Application layer**: Hono verifies Bearer JWT with Supabase Auth and extracts `userId`.
-2. **Database layer**: each request must set JWT claim context on the DB session/transaction before TODO queries so RLS can evaluate `auth.uid()` correctly.
+2. **Database layer**: each request must run TODO queries in a single transaction that sets JWT claim context (`request.jwt.claims`) and `SET LOCAL ROLE authenticated` before queries so RLS can evaluate `auth.uid()` correctly.
 3. **Defense in depth**: API queries always filter by `userId`, and RLS independently denies cross-user access if API filtering is wrong or missing.
 
 If per-request claim context cannot be reliably set with the chosen connection strategy, use Supabase PostgREST for user-scoped data access instead of direct SQL for TODO CRUD.
@@ -81,7 +81,7 @@ pnpm install && pnpm turbo build
   - Explicit `SELECT`/`INSERT`/`UPDATE`/`DELETE` policies scoped to `auth.uid() = user_id`
   - `updated_at` trigger function + trigger definition
   - Any required grants for authenticated role
-- `src/security.ts` (or equivalent) — helper to apply per-request JWT claim context before running user-scoped queries
+- `src/security.ts` (or equivalent) — helpers to run transaction-scoped user queries with per-request claim context and local DB role
 
 ### Verification
 ```bash
@@ -101,6 +101,7 @@ pnpm db:generate && pnpm db:migrate
 - `src/middleware/auth.ts` — extracts Bearer token, verifies with `supabase.auth.getUser()`, sets `userId`
 - `src/routes/todos.ts` — CRUD endpoints:
   - `GET /todos` — list user's todos
+  - `GET /todos/:id` — get one todo (404 when not found or not owned)
   - `POST /todos` — create (zod validates `{ title: string }`)
   - `PATCH /todos/:id` — update title/completed
   - `DELETE /todos/:id` — delete
@@ -153,7 +154,7 @@ pnpm dev  # Both apps start via turbo
 ### Key wiring
 1. **Hono RPC types**: `apps/api` exports `AppType`, `apps/web` imports it as type-only via `workspace:*`
 2. **Auth flow**: Remix manages cookies → extracts `session.access_token` → sends as Bearer to Hono → Hono verifies with Supabase
-3. **DB auth context flow**: Hono sets per-request JWT claim context in DB before TODO queries so `auth.uid()` resolves to the authenticated user
+3. **DB auth context flow**: Hono runs each request's TODO query inside a transaction that sets `request.jwt.claims` and `SET LOCAL ROLE authenticated` before SQL, so `auth.uid()` resolves to the authenticated user under RLS
 4. **CORS**: Hono allows Remix origin with credentials + Authorization header
 
 ### Test plan

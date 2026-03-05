@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build the Hono-based REST API deployed to Cloudflare Workers. It provides authenticated CRUD endpoints for todos, validates input with Zod, and exports `AppType` for type-safe RPC from the Remix frontend.
+Build the Hono-based REST API deployed to Cloudflare Workers. It provides authenticated CRUD endpoints for todos, validates input with Zod, applies transaction-scoped DB auth context for RLS, and exports `AppType` for type-safe RPC from the Remix frontend.
 
 ## Dependencies
 
@@ -76,10 +76,12 @@ compatibility_flags = ["nodejs_compat"]
 #### `apps/api/.dev.vars.example`
 
 ```
-DATABASE_URL=postgresql://postgres:password@db.xxx.supabase.co:5432/postgres
+DATABASE_URL=postgresql://app_user:password@db.xxx.supabase.co:5432/postgres
 SUPABASE_URL=https://xxx.supabase.co
 SUPABASE_ANON_KEY=eyJ...
 ```
+
+Use a runtime DB user that cannot bypass RLS.
 
 ### Application Code
 
@@ -162,7 +164,7 @@ import { zValidator } from "@hono/zod-validator";
 import { z } from "zod";
 import { eq, and } from "drizzle-orm";
 import { createDb, todos } from "@todo-supabase/database";
-import { setRequestContext } from "@todo-supabase/database/security";
+import { runAsAuthenticated } from "@todo-supabase/database/security";
 import { authMiddleware } from "../middleware/auth";
 
 type Bindings = {
@@ -185,12 +187,26 @@ route.use("/*", authMiddleware);
 route.get("/", async (c) => {
   const db = createDb(c.env.DATABASE_URL);
   const userId = c.get("userId");
-  const result = await db
-    .select()
-    .from(todos)
-    .where(eq(todos.userId, userId))
-    .orderBy(todos.createdAt);
+  const claims = { sub: userId, role: "authenticated" as const };
+  const result = await runAsAuthenticated(db, claims, async (tx) =>
+    tx.select().from(todos).where(eq(todos.userId, userId)).orderBy(todos.createdAt)
+  );
   return c.json(result);
+});
+
+// GET /todos/:id — single todo
+route.get("/:id", async (c) => {
+  const db = createDb(c.env.DATABASE_URL);
+  const userId = c.get("userId");
+  const id = c.req.param("id");
+  const claims = { sub: userId, role: "authenticated" as const };
+  const [todo] = await runAsAuthenticated(db, claims, async (tx) =>
+    tx.select().from(todos).where(and(eq(todos.id, id), eq(todos.userId, userId)))
+  );
+  if (!todo) {
+    return c.json({ error: "Not found" }, 404);
+  }
+  return c.json(todo);
 });
 
 // POST /todos — create a new todo
@@ -200,10 +216,10 @@ route.post("/", zValidator("json", createSchema), async (c) => {
   const db = createDb(c.env.DATABASE_URL);
   const userId = c.get("userId");
   const { title } = c.req.valid("json");
-  const [todo] = await db
-    .insert(todos)
-    .values({ title, userId })
-    .returning();
+  const claims = { sub: userId, role: "authenticated" as const };
+  const [todo] = await runAsAuthenticated(db, claims, async (tx) =>
+    tx.insert(todos).values({ title, userId }).returning()
+  );
   return c.json(todo, 201);
 });
 
@@ -218,11 +234,14 @@ route.patch("/:id", zValidator("json", updateSchema), async (c) => {
   const userId = c.get("userId");
   const id = c.req.param("id");
   const data = c.req.valid("json");
-  const [todo] = await db
-    .update(todos)
-    .set(data)
-    .where(and(eq(todos.id, id), eq(todos.userId, userId)))
-    .returning();
+  const claims = { sub: userId, role: "authenticated" as const };
+  const [todo] = await runAsAuthenticated(db, claims, async (tx) =>
+    tx
+      .update(todos)
+      .set(data)
+      .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+      .returning()
+  );
   if (!todo) {
     return c.json({ error: "Not found" }, 404);
   }
@@ -234,10 +253,13 @@ route.delete("/:id", async (c) => {
   const db = createDb(c.env.DATABASE_URL);
   const userId = c.get("userId");
   const id = c.req.param("id");
-  const [deleted] = await db
-    .delete(todos)
-    .where(and(eq(todos.id, id), eq(todos.userId, userId)))
-    .returning();
+  const claims = { sub: userId, role: "authenticated" as const };
+  const [deleted] = await runAsAuthenticated(db, claims, async (tx) =>
+    tx
+      .delete(todos)
+      .where(and(eq(todos.id, id), eq(todos.userId, userId)))
+      .returning()
+  );
   if (!deleted) {
     return c.json({ error: "Not found" }, 404);
   }
@@ -276,9 +298,10 @@ TDD order:
 1. **401 guard** — `GET /todos` without Authorization header returns 401.
 2. **Create** — `POST /todos` with valid token and body returns 201.
 3. **List** — `GET /todos` returns the created todo.
-4. **Update** — `PATCH /todos/:id` toggles completed.
-5. **Delete** — `DELETE /todos/:id` removes the todo.
-6. **Isolation** — User B cannot access User A's todo (returns 404, not 403).
+4. **Get by id** — `GET /todos/:id` returns own todo, 404 otherwise.
+5. **Update** — `PATCH /todos/:id` toggles completed.
+6. **Delete** — `DELETE /todos/:id` removes the todo.
+7. **Isolation** — User B cannot access User A's todo (returns 404, not 403).
 
 Note: Tests may need to mock Supabase Auth or use a test-specific Supabase project.
 
